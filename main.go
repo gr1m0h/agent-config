@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -21,17 +20,10 @@ type Config struct {
 		Claude TargetConfig `json:"claude"`
 		Codex  TargetConfig `json:"codex"`
 	} `json:"targets"`
-	MCP MCPConfig `json:"mcp"`
 }
 
 type TargetConfig struct {
 	Output string `json:"output"`
-}
-
-type MCPConfig struct {
-	Provider string `json:"provider"`
-	Apply    bool   `json:"apply"`
-	Mode     string `json:"mode"`
 }
 
 type Manifest struct {
@@ -86,9 +78,6 @@ func defaultConfig() Config {
 	c.Version = 1
 	c.Targets.Claude.Output = "~/.claude"
 	c.Targets.Codex.Output = "~/.codex"
-	c.MCP.Provider = "mmcp"
-	c.MCP.Apply = false
-	c.MCP.Mode = "merge"
 	return c
 }
 
@@ -116,7 +105,7 @@ func initTree(root string) error {
 	if err := writeIfMissing(filepath.Join(root, "config.json"), cfg, 0o644); err != nil {
 		return err
 	}
-	if err := writeIfMissing(filepath.Join(root, "targets/codex/config.toml"), []byte("# Codex-only settings. MCP is intentionally managed by mmcp.\n"), 0o644); err != nil {
+	if err := writeIfMissing(filepath.Join(root, "targets/codex/config.toml"), []byte("# Codex-only settings.\n"), 0o644); err != nil {
 		return err
 	}
 	if err := writeIfMissing(filepath.Join(root, "targets/claude/settings.json"), []byte("{}\n"), 0o644); err != nil {
@@ -175,7 +164,6 @@ func cmdGenerate(args []string) error {
 	target := f.String("target", "all", "claude, codex, or all")
 	force := f.Bool("force", false, "overwrite colliding unmanaged files")
 	dry := f.Bool("dry-run", false, "show writes without changing files")
-	noMCP := f.Bool("no-mcp", false, "do not invoke configured MCP provider")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -200,15 +188,6 @@ func cmdGenerate(args []string) error {
 	if err != nil {
 		return err
 	}
-	if !*noMCP && cfg.MCP.Apply && (*target == "all" || *target == "codex" || *target == "claude") {
-		if *dry {
-			fmt.Printf("DRY mmcp apply --mode %s\n", normalizedMode(cfg.MCP.Mode))
-			return nil
-		}
-		if err := applyMCP(cfg.MCP); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -218,8 +197,7 @@ func cmdCheck(args []string) error {
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	cfg, err := loadConfig(*root)
-	if err != nil {
+	if _, err := loadConfig(*root); err != nil {
 		return err
 	}
 	checks := []string{"instructions.md", "skills", "agents", "rules", "hooks", "targets/claude", "targets/codex"}
@@ -242,9 +220,6 @@ func cmdCheck(args []string) error {
 	fmt.Println("△ hooks: native on Claude; scripts copied to Codex but not auto-registered")
 	fmt.Println("△ statusline: Claude-only")
 	fmt.Println("△ settings: target-specific overlays; no unsafe semantic translation")
-	if cfg.MCP.Provider == "mmcp" {
-		fmt.Printf("✓ MCP: mmcp kept as source of truth (auto-apply=%v, mode=%s)\n", cfg.MCP.Apply, normalizedMode(cfg.MCP.Mode))
-	}
 	return nil
 }
 
@@ -484,32 +459,6 @@ func (g Generator) writeTarget(dst string, files map[string][]byte, target strin
 		fmt.Println("warning: Codex hooks are copied but not lifecycle-registered; neutral agents are lowered to skills")
 	}
 	return nil
-}
-
-func applyMCP(c MCPConfig) error {
-	if c.Provider == "" {
-		return nil
-	}
-	if c.Provider != "mmcp" {
-		return fmt.Errorf("unsupported MCP provider %q", c.Provider)
-	}
-	if _, err := exec.LookPath("mmcp"); err != nil {
-		return errors.New("mcp.apply is true but mmcp is not installed/in PATH")
-	}
-	args := []string{"apply", "--mode", normalizedMode(c.Mode)}
-	cmd := exec.Command("mmcp", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	fmt.Println("running: mmcp", strings.Join(args, " "))
-	return cmd.Run()
-}
-
-func normalizedMode(m string) string {
-	if m == "replace" {
-		return "replace"
-	}
-	return "merge"
 }
 
 func expandHome(p string) (string, error) {

@@ -82,63 +82,19 @@ Use `--dry-run` before adopting existing target directories:
 agent-config generate --root ~/.config/agents-config --target all --dry-run
 ```
 
-## MCP and mmcp
-
-**Keep using `mmcp`.** It already solves exactly the MCP-specific problem: one `~/.mmcp.json` source applied to Claude Code, Codex CLI, and other clients. Duplicating that logic here would create two competing sources of truth.
-
-Recommended setup:
-
-```bash
-mmcp agents add claude-code codex-cli
-```
-
-Then enable post-generation apply in `config.json`:
-
-```json
-{
-  "version": 1,
-  "targets": {
-    "claude": { "output": "~/.claude" },
-    "codex": { "output": "~/.codex" }
-  },
-  "mcp": {
-    "provider": "mmcp",
-    "apply": true,
-    "mode": "merge"
-  }
-}
-```
-
-Generation order becomes:
-
-```text
-neutral source
-   ├─> ~/.claude/*
-   └─> ~/.codex/*
-             ↓
-       mmcp apply --mode merge
-             ↓
-   MCP entries merged into native configs
-```
-
-This matters for Codex because `mmcp` writes MCP definitions into `~/.codex/config.toml`. `agent-config` writes the Codex-only overlay first; `mmcp` merges MCP entries afterward.
-
-If you want MCP updates to remain an explicit separate operation, leave `mcp.apply` as `false` and continue running `mmcp apply` yourself.
-
 ## Dotfiles recommendation
 
-Track only the neutral source and `~/.mmcp.json` in dotfiles:
+Track the neutral source in dotfiles:
 
 ```text
 dotfiles/
-├── .config/agents-config/
-│   ├── instructions.md
-│   ├── skills/
-│   ├── agents/
-│   ├── rules/
-│   ├── hooks/
-│   └── targets/
-└── .mmcp.json
+└── .config/agents-config/
+    ├── instructions.md
+    ├── skills/
+    ├── agents/
+    ├── rules/
+    ├── hooks/
+    └── targets/
 ```
 
 Treat `.claude/` and `.codex/` as generated deployment outputs.

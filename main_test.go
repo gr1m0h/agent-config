@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,5 +39,15 @@ func TestBuildCodexAgentsMD(t *testing.T) {
 	got := string(b)
 	if !strings.Contains(got, "Base") || !strings.Contains(got, "## go") || !strings.Contains(got, "Use gofmt.") {
 		t.Fatal(got)
+	}
+}
+
+func TestDefaultConfigContainsOnlyAgentConfigSettings(t *testing.T) {
+	b, err := json.Marshal(defaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"mcp"`) {
+		t.Fatalf("external MCP configuration leaked into default config: %s", b)
 	}
 }
